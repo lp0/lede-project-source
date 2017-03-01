@@ -1,0 +1,52 @@
+--- a/drivers/net/ethernet/lantiq_xrx200.c	2017-03-01 17:02:13.000000000 +0000
++++ b/drivers/net/ethernet/lantiq_xrx200.c	2017-03-01 17:15:36.000000000 +0000
+@@ -54,14 +54,19 @@
+ #define XRX200_HEADROOM		4
+ 
+ #define XRX200_TX_TIMEOUT	(10 * HZ)
+ 
++/* allowed jumbo packet length [1500 +] n
++ * (where 0 <= n <= 1028, without VLAN tags)
++ */
++#define XRX200_JUMBO_LEN	8
++
+ /* port type */
+ #define XRX200_PORT_TYPE_PHY	1
+ #define XRX200_PORT_TYPE_MAC	2
+ 
+ /* DMA */
+-#define XRX200_DMA_DATA_LEN	0x600
++#define XRX200_DMA_DATA_LEN	(0x600 + XRX200_JUMBO_LEN)
+ #define XRX200_DMA_IRQ		INT_NUM_IM2_IRL0
+ #define XRX200_DMA_RX		0
+ #define XRX200_DMA_TX		1
+ #define XRX200_DMA_TX_2		3
+@@ -1561,13 +1566,16 @@
+ 		ltq_switch_w32_mask(0, 0x01, SDMA_PCTRLx(i));
+ 		ltq_switch_w32_mask(0, PCE_INGRESS, PCE_PCTRL_REG(i, 0));
+ 	}
+ 
++	/* allow jumbo frames on all ports */
++	for (i = 0; i < 7; i++)
++		ltq_switch_w32_mask(0, BIT(3), MAC_CTRL_REG(i, 2));
++
+ 	/* enable special tag insertion on cpu port */
+ 	ltq_switch_w32_mask(0, 0x02, FDMA_PCTRLx(6));
+ 	ltq_switch_w32_mask(0, PCE_INGRESS, PCE_PCTRL_REG(6, 0));
+-	ltq_switch_w32_mask(0, BIT(3), MAC_CTRL_REG(6, 2));
+-	ltq_switch_w32(1518 + 8 + 4 * 2, MAC_FLEN_REG);
++	ltq_switch_w32(8 + VLAN_ETH_FRAME_LEN + XRX200_JUMBO_LEN + VLAN_HLEN * 2, MAC_FLEN_REG);
+ 	xrx200sw_write_x(1, XRX200_BM_QUEUE_GCTRL_GL_MOD, 0);
+ 
+ 	for (i = 0; i < XRX200_MAX_VLAN; i++)
+ 		hw->vlan_vid[i] = i;
+@@ -1688,8 +1696,9 @@
+ 	strcpy(hw->devs[hw->num_devs]->name, "eth%d");
+ 	hw->devs[hw->num_devs]->netdev_ops = &xrx200_netdev_ops;
+ 	hw->devs[hw->num_devs]->watchdog_timeo = XRX200_TX_TIMEOUT;
+ 	hw->devs[hw->num_devs]->needed_headroom = XRX200_HEADROOM;
++	hw->devs[hw->num_devs]->max_mtu = 1500 + XRX200_JUMBO_LEN;
+ 	SET_NETDEV_DEV(hw->devs[hw->num_devs], dev);
+ 
+ 	/* setup our private data */
+ 	priv = netdev_priv(hw->devs[hw->num_devs]);
